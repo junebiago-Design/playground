@@ -10,10 +10,69 @@ declare(strict_types=1);
  * page to a public network.
  */
 
-$output = '';
-$command = '';
+// ---------------------------------------------------------------------------
+// Share the workspace root with the editor (index.html + api.php).
+// ---------------------------------------------------------------------------
+// The editor stores the active workspace in $_SESSION['root'] whenever the
+// user opens a file or folder. We read the same session here so the terminal
+// starts in the same directory.
+
+// Paths relative to this file: this file lives in <project>/terminal/index.php
+// The editor lives in <project>/, so its config.php is one level up.
+$editorRoot       = dirname(__DIR__);                             // .../playground
+$editorConfigFile = $editorRoot . DIRECTORY_SEPARATOR . 'config.php';
+
+// Start the session BEFORE any output. Session storage is shared with the
+// editor when both are served by the same PHP process on the same origin.
+if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
+    @session_start();
+}
+
+// Default fallback: <project>/workspace
+$defaultWorkspace = $editorRoot . DIRECTORY_SEPARATOR . 'workspace';
+
+// Resolve the active workspace:
+//   1. ?root=... query parameter (highest priority — explicit override)
+//   2. $_SESSION['root'] set by the editor via api.php?action=setRoot
+//   3. DEFAULT_WORKSPACE_ROOT from the editor's config.php
+//   4. <project>/workspace
+$workingDirectory = $defaultWorkspace;
+
+// 1) Query parameter
+if (!empty($_GET['root'])) {
+    $requested = realpath((string)$_GET['root']);
+    if ($requested !== false && is_dir($requested)) {
+        $workingDirectory = $requested;
+        // Persist it so subsequent visits remember it too.
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            $_SESSION['root'] = $requested;
+        }
+    }
+}
+// 2) Session value set by the editor
+elseif (!empty($_SESSION['root']) && is_dir($_SESSION['root'])) {
+    $workingDirectory = $_SESSION['root'];
+}
+// 3) Default from config.php
+elseif (is_file($editorConfigFile)) {
+    if (!defined('DEFAULT_WORKSPACE_ROOT')) {
+        // config.php uses define() and starts a session; both are already
+        // guarded there, so including it here is safe.
+        @include $editorConfigFile;
+    }
+    if (defined('DEFAULT_WORKSPACE_ROOT') && is_dir(DEFAULT_WORKSPACE_ROOT)) {
+        $workingDirectory = DEFAULT_WORKSPACE_ROOT;
+    }
+}
+
+// Final safety net — must resolve to a real directory.
+if (!is_dir($workingDirectory)) {
+    $workingDirectory = $defaultWorkspace;
+}
+
+$output   = '';
+$command  = '';
 $exitCode = null;
-$workingDirectory = 'D:\00_Inbox\01-Webdev\playground';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $command = trim((string)($_POST['command'] ?? ''));
@@ -24,25 +83,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (!function_exists('proc_open')) {
             $output = 'Error: proc_open() is disabled in this PHP installation.';
         } else {
-           $process = proc_open(
-    [
-        'powershell.exe',
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-ExecutionPolicy',
-        'RemoteSigned',
-        '-Command',
-        $command
-    ],
-    [
-        0 => ['pipe', 'r'],
-        1 => ['pipe', 'w'],
-        2 => ['pipe', 'w']
-    ],
-    $pipes,
-    $workingDirectory
-);
+            $process = proc_open(
+                [
+                    'powershell.exe',
+                    '-NoLogo',
+                    '-NoProfile',
+                    '-NonInteractive',
+                    '-ExecutionPolicy',
+                    'RemoteSigned',
+                    '-Command',
+                    $command
+                ],
+                [
+                    0 => ['pipe', 'r'],
+                    1 => ['pipe', 'w'],
+                    2 => ['pipe', 'w']
+                ],
+                $pipes,
+                $workingDirectory   // <-- active workspace
+            );
 
             if (is_resource($process)) {
                 fclose($pipes[0]);
@@ -139,6 +198,15 @@ function h(string $value): string
         .status, .hint {
             color: #94a3b8;
             font-size: .85rem;
+        }
+
+        .status code {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            padding: 2px 6px;
+            color: #7dd3fc;
+            font-size: .8rem;
         }
 
         .panel {
@@ -279,12 +347,15 @@ function h(string $value): string
 <main class="terminal">
     <header>
         <h1>PlayGround-Terminal V2</h1>
-        <span class="status">Local Windows PowerShell</span>
+        <span class="status">
+            Local Windows PowerShell —
+            <code title="<?= h($workingDirectory) ?>"><?= h(basename($workingDirectory)) ?></code>
+        </span>
     </header>
 
     <section class="panel" aria-label="Terminal output">
         <div class="panel-title">Output</div>
-        <pre id="output" aria-live="polite"><?= h($output !== '' ? $output : "Ready. Enter a command below.\n") ?></pre>
+        <pre id="output" aria-live="polite"><?= h($output !== '' ? $output : "Ready. Working directory: " . $workingDirectory . "\nEnter a command below.\n") ?></pre>
     </section>
 
     <form method="post" id="terminal-form" autocomplete="off">
@@ -349,24 +420,10 @@ function h(string $value): string
     /*
      * Turn a VS Code-style snippet template into plain text and
      * select the first ${N:placeholder} so the user can type over it.
-     *
-     * Examples:
-     *   "git commit -m \"${1:comment}\""
-     *     -> "git commit -m \"comment\""
-     *     -> selects the word: comment
-     *
-     *   "git checkout ${1:branch-name}"
-     *     -> "git checkout branch-name"
-     *     -> selects: branch-name
-     *
-     *   "Get-ChildItem -Force"
-     *     -> "Get-ChildItem -Force"
-     *     -> cursor at end
      */
     function chooseSnippet(snippet) {
         const raw = String(snippet.template ?? '');
 
-        // Find the first placeholder: ${N:default} or ${N}
         const match = raw.match(/\$\{(\d+)(?::([^}]*))?\}/);
 
         if (!match) {
@@ -381,7 +438,6 @@ function h(string $value): string
         const before = raw.slice(0, match.index);
         const after  = raw.slice(match.index + match[0].length);
 
-        // Compose the final text with the placeholder's default value
         input.value = before + placeholderText + after;
 
         closeSuggestions();
@@ -390,7 +446,6 @@ function h(string $value): string
         const start = before.length;
         const end   = start + placeholderText.length;
 
-        // Select the placeholder so typing replaces it immediately
         input.setSelectionRange(start, end);
     }
 

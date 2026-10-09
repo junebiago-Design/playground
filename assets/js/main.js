@@ -933,6 +933,37 @@
     else browseTo("");
   });
 
+  // ---------- Sidebar toggle ----------
+  var bodyEl       = document.getElementById("body");
+  var toggleBtn    = document.getElementById("btn-toggle-sidebar");
+  var SIDEBAR_KEY  = "pg-sidebar-hidden";
+
+  function setSidebarHidden(hidden) {
+    bodyEl.classList.toggle("sidebar-hidden", hidden);
+    toggleBtn.classList.toggle("toggle-off", hidden);
+    toggleBtn.title = hidden
+      ? "Show Explorer panel (Ctrl+B)"
+      : "Hide Explorer panel (Ctrl+B)";
+    try { localStorage.setItem(SIDEBAR_KEY, hidden ? "1" : "0"); } catch (e) {}
+    // Let the CSS transition finish, then refresh the editor so it re-measures
+    setTimeout(function () { editor.refresh(); }, 200);
+  }
+
+  function toggleSidebar() {
+    setSidebarHidden(!bodyEl.classList.contains("sidebar-hidden"));
+  }
+
+  // Restore the saved state on load
+  try {
+    if (localStorage.getItem(SIDEBAR_KEY) === "1") {
+      bodyEl.classList.add("sidebar-hidden");
+      toggleBtn.classList.add("toggle-off");
+      toggleBtn.title = "Show Explorer panel (Ctrl+B)";
+    }
+  } catch (e) {}
+
+  toggleBtn.addEventListener("click", toggleSidebar);
+
   // ---------- Menu ----------
   var menuFileBtn = document.getElementById("menu-file");
   var menuFileDropdown = document.getElementById("menu-file-dropdown");
@@ -1134,6 +1165,10 @@
     }
     if (mod && !shift && !alt && key === "e") {
       e.preventDefault(); e.stopPropagation(); doExportZip(); return true;
+    }
+    // Ctrl+B — toggle the Explorer sidebar
+    if (mod && !shift && !alt && key === "b") {
+      e.preventDefault(); e.stopPropagation(); toggleSidebar(); return true;
     }
     if (key === "escape") { closeDropdown(); hideContextMenu(); return false; }
     return false;

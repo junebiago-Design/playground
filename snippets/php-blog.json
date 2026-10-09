@@ -1,0 +1,9 @@
+{
+  "snippets": [
+    {
+      "trigger": "bpost",
+      "description": "Blog post template (PHP)",
+      "template": "<?php\nrequire_once 'config.php';\n\n$post = get_post((int)$_GET['id']);\nif (!$post) { header('HTTP/1.0 404 Not Found'); exit; }\n?>\n<!DOCTYPE html>\n<html>\n<head><title><?= htmlspecialchars($post['title']) ?></title></head>\n<body>\n    <h1><?= htmlspecialchars($post['title']) ?></h1>\n    <article><?= nl2br(htmlspecialchars($post['body'])) ?></article>\n</body>\n</html>\n$0"
+    }
+  ]
+}

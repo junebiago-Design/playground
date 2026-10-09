@@ -1,0 +1,19 @@
+{
+  "snippets": [
+    {
+      "trigger": "css",
+      "description": "CSS basic stylesheet",
+      "template": "/* ${1:Stylesheet} */\n\n* {\n    margin: 0;\n    padding: 0;\n    box-sizing: border-box;\n}\n\nbody {\n    font-family: ${2:system-ui, sans-serif};\n    ${3}\n}\n$0"
+    },
+    {
+      "trigger": "flex",
+      "description": "Flexbox center",
+      "template": "display: flex;\njustify-content: center;\nalign-items: center;\n$0"
+    },
+    {
+      "trigger": "grid",
+      "description": "CSS Grid",
+      "template": "display: grid;\ngrid-template-columns: repeat(${1:3}, 1fr);\ngap: ${2:1rem};\n$0"
+    }
+  ]
+}

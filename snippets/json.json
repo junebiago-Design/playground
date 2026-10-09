@@ -1,0 +1,24 @@
+{
+  "snippets": [
+    {
+      "trigger": "jsonobj",
+      "description": "Empty JSON object",
+      "template": "{\n    \"${1:key}\": \"${2:value}\"\n}\n$0"
+    },
+    {
+      "trigger": "jsonarr",
+      "description": "JSON array of objects",
+      "template": "[\n    {\n        \"${1:key}\": \"${2:value}\"\n    }\n]\n$0"
+    },
+    {
+      "trigger": "pkg",
+      "description": "package.json skeleton",
+      "template": "{\n  \"name\": \"${1:my-project}\",\n  \"version\": \"${2:1.0.0}\",\n  \"description\": \"${3}\",\n  \"main\": \"${4:index.js}\",\n  \"scripts\": {\n    \"start\": \"${5:node index.js}\"\n  },\n  \"license\": \"${6:MIT}\"\n}\n$0"
+    },
+    {
+      "trigger": "tsconfig",
+      "description": "tsconfig.json skeleton",
+      "template": "{\n  \"compilerOptions\": {\n    \"target\": \"${1:ES2020}\",\n    \"module\": \"${2:commonjs}\",\n    \"strict\": true,\n    \"esModuleInterop\": true,\n    \"skipLibCheck\": true,\n    \"forceConsistentCasingInFileNames\": true\n  },\n  \"include\": [\"${3:src/**/*}\"],\n  \"exclude\": [\"node_modules\"]\n}\n$0"
+    }
+  ]
+}

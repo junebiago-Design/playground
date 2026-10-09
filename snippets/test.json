@@ -1,0 +1,9 @@
+{
+  "snippets": [
+    {
+      "trigger": "htmlxxx",
+      "description": "Snippet description",
+      "template": "How to ${1:snippets}"
+    }
+  ]
+}

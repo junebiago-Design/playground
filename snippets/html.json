@@ -1,0 +1,14 @@
+{
+  "snippets": [
+    {
+      "trigger": "html",
+      "description": "HTML5 boilerplate",
+      "template": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>${1:Document}</title>\n    <link rel=\"stylesheet\" href=\"${2:style.css}\">\n</head>\n<body>\n    ${3}\n    <script src=\"${4:script.js}\"></script>\n</body>\n</html>\n$0"
+    },
+    {
+      "trigger": "html5",
+      "description": "HTML5 minimal",
+      "template": "<!DOCTYPE html>\n<html>\n<head><title>${1:Title}</title></head>\n<body>\n${2}\n</body>\n</html>\n$0"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "snippets": [
+    {
+      "trigger": "md",
+      "description": "Markdown document",
+      "template": "# ${1:Title}\n\n${2:Short description}\n\n## Installation\n\n```bash\n${3:npm install}\n```\n\n## Usage\n\n${4}\n\n## License\n\n${5:MIT}\n$0"
+    },
+    {
+      "trigger": "table",
+      "description": "Markdown table",
+      "template": "| ${1:Column 1} | ${2:Column 2} |\n| --- | --- |\n| ${3} | ${4} |\n$0"
+    }
+  ]
+}
+

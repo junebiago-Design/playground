@@ -1,0 +1,57 @@
+{
+  "snippets": [
+    {
+      "trigger": "pwd",
+      "description": "Show the current working directory",
+      "template": "Get-Location"
+    },
+    {
+      "trigger": "ls",
+      "description": "List files and folders",
+      "template": "Get-ChildItem"
+    },
+    {
+      "trigger": "clear",
+      "description": "Clear the PowerShell screen (new process output is shown on the page)",
+      "template": "Clear-Host"
+    },
+    {
+      "trigger": "phpv",
+      "description": "Show the installed PHP version",
+      "template": "php -v"
+    },
+    {
+      "trigger": "gitst",
+      "description": "Show Git working tree status",
+      "template": "git status"
+    },
+    
+     {
+      "trigger": "gitadd-all",
+      "description": "Show Git working tree status",
+      "template": "git add ."
+    },
+      
+        {
+      "trigger": "gitcommit",
+      "description": "Show Git working tree status",
+      "template": "git commit -m \"${1:comment}\""
+    },
+      
+    {
+      "trigger": "kiteinfo",
+      "description": "Show KitePHP console information",
+      "template": "php console show:info"
+    },
+    {
+      "trigger": "cdkite",
+      "description": "Change to your KitePHP project folder (edit this path)",
+      "template": "Set-Location 'C:\\laragon\\www\\KitePHP'"
+    },
+    {
+      "trigger": "composer",
+      "description": "Run Composer install in the current project",
+      "template": "composer install"
+    }
+  ]
+}

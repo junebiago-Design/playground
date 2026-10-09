@@ -84,38 +84,19 @@ function h(string $value): string
             font-family: Consolas, "Courier New", monospace;
             background: #0b1120;
             color: #e5e7eb;
-
-            --page-pad: 24px;
-            --gap: 14px;
-            --header-h: 40px;
-            --hint-h: 42px;
-            --form-h: 52px;
         }
 
         * { box-sizing: border-box; }
 
-        html, body {
-            height: 100%;
-            margin: 0;
-        }
-
         body {
-            padding: var(--page-pad);
+            margin: 0;
+            padding: 24px;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
         }
 
         .terminal {
             max-width: 1100px;
-            width: 100%;
             margin: 0 auto;
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
-            gap: var(--gap);
         }
 
         header {
@@ -124,8 +105,7 @@ function h(string $value): string
             justify-content: space-between;
             gap: 12px;
             flex-wrap: wrap;
-            flex-shrink: 0;
-            min-height: var(--header-h);
+            margin-bottom: 18px;
         }
 
         h1 {
@@ -144,10 +124,6 @@ function h(string $value): string
             background: #0f172a;
             border-radius: 10px;
             overflow: hidden;
-            flex: 1 1 auto;
-            display: flex;
-            flex-direction: column;
-            min-height: 0;
         }
 
         .panel-title {
@@ -156,12 +132,11 @@ function h(string $value): string
             border-bottom: 1px solid #273449;
             color: #cbd5e1;
             font-size: .85rem;
-            flex-shrink: 0;
         }
 
         #output {
-            flex: 1 1 auto;
-            min-height: 0;
+            min-height: 260px;
+            max-height: 55vh;
             overflow: auto;
             margin: 0;
             padding: 16px;
@@ -170,14 +145,12 @@ function h(string $value): string
             color: #d1fae5;
             font: inherit;
             line-height: 1.5;
-            tab-size: 4;
         }
 
         form {
             display: flex;
             gap: 10px;
-            flex-shrink: 0;
-            min-height: var(--form-h);
+            margin-top: 14px;
         }
 
         .input-wrap {
@@ -188,7 +161,6 @@ function h(string $value): string
 
         #command {
             width: 100%;
-            height: 100%;
             padding: 14px 15px;
             border: 1px solid #334155;
             border-radius: 8px;
@@ -211,7 +183,6 @@ function h(string $value): string
             color: white;
             font: inherit;
             cursor: pointer;
-            flex-shrink: 0;
         }
 
         button:hover { background: #0369a1; }
@@ -247,13 +218,7 @@ function h(string $value): string
             overflow-wrap: anywhere;
         }
 
-        .hint {
-            margin: 0 2px;
-            line-height: 1.6;
-            flex-shrink: 0;
-            min-height: var(--hint-h);
-        }
-
+        .hint { margin: 10px 2px 0; line-height: 1.6; }
         kbd {
             padding: 2px 5px;
             border: 1px solid #475569;
@@ -262,13 +227,8 @@ function h(string $value): string
         }
 
         @media (max-width: 600px) {
-            :root {
-                --page-pad: 14px;
-                --gap: 10px;
-                --hint-h: 60px;
-            }
-            form { flex-direction: column; min-height: auto; }
-            .input-wrap { min-height: 48px; }
+            body { padding: 14px; }
+            form { flex-direction: column; }
             button { min-height: 44px; }
         }
     </style>
@@ -319,6 +279,7 @@ function h(string $value): string
     let matches = [];
     let activeIndex = 0;
 
+    // The server renders output after a POST. Keep the input empty and focused.
     window.addEventListener('DOMContentLoaded', () => {
         input.value = '';
         input.focus();
@@ -334,6 +295,7 @@ function h(string $value): string
             snippets = Array.isArray(data.snippets) ? data.snippets : [];
         })
         .catch(() => {
+            // The terminal still works if the optional snippets file is missing.
             snippets = [];
         });
 
@@ -344,52 +306,11 @@ function h(string $value): string
         activeIndex = 0;
     }
 
-    /*
-     * Turn a VS Code-style snippet template into plain text and
-     * select the first ${N:placeholder} so the user can type over it.
-     *
-     * Examples:
-     *   "git commit -m \"${1:comment}\""
-     *     -> "git commit -m \"comment\""
-     *     -> selects the word: comment
-     *
-     *   "git checkout ${1:branch-name}"
-     *     -> "git checkout branch-name"
-     *     -> selects: branch-name
-     *
-     *   "Get-ChildItem -Force"
-     *     -> "Get-ChildItem -Force"
-     *     -> cursor at end
-     */
     function chooseSnippet(snippet) {
-        const raw = String(snippet.template ?? '');
-
-        // Find the first placeholder: ${N:default} or ${N}
-        const match = raw.match(/\$\{(\d+)(?::([^}]*))?\}/);
-
-        if (!match) {
-            input.value = raw;
-            closeSuggestions();
-            input.focus();
-            input.setSelectionRange(input.value.length, input.value.length);
-            return;
-        }
-
-        const placeholderText = match[2] ?? '';
-        const before = raw.slice(0, match.index);
-        const after  = raw.slice(match.index + match[0].length);
-
-        // Compose the final text with the placeholder's default value
-        input.value = before + placeholderText + after;
-
+        input.value = String(snippet.template ?? '');
         closeSuggestions();
         input.focus();
-
-        const start = before.length;
-        const end   = start + placeholderText.length;
-
-        // Select the placeholder so typing replaces it immediately
-        input.setSelectionRange(start, end);
+        input.setSelectionRange(input.value.length, input.value.length);
     }
 
     function renderSuggestions() {
@@ -402,7 +323,8 @@ function h(string $value): string
 
         matches = snippets.filter(snippet => {
             const trigger = String(snippet.trigger ?? '').toLowerCase();
-            return trigger.startsWith(typed) || trigger.includes(typed);
+            return trigger.startsWith(typed) ||
+                trigger.includes(typed);
         }).slice(0, 8);
 
         if (!matches.length) {
@@ -427,6 +349,7 @@ function h(string $value): string
 
             item.append(title, description);
             item.addEventListener('mousedown', event => {
+                // Keep focus in the command input while selecting a suggestion.
                 event.preventDefault();
                 chooseSnippet(snippet);
             });
@@ -448,6 +371,7 @@ function h(string $value): string
             event.preventDefault();
             const typed = input.value.trim().toLowerCase();
 
+            // If the typed text exactly matches a trigger, complete that snippet.
             const exact = matches.find(snippet =>
                 String(snippet.trigger ?? '').toLowerCase() === typed
             );
@@ -467,6 +391,9 @@ function h(string $value): string
     });
 
     form.addEventListener('submit', () => {
+        // Clear immediately so the typing area is ready as the request is sent.
+        // The page will reload with the output, and autofocus restores the cursor.
+        input.value = '';
         closeSuggestions();
     });
 

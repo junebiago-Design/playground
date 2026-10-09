@@ -13,7 +13,7 @@ declare(strict_types=1);
 $output = '';
 $command = '';
 $exitCode = null;
-$workingDirectory = 'D:\00_Inbox\01-Webdev\00FrameWork\KitePHP';
+$workingDirectory = 'D:\00_Inbox\01-Webdev\playground';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $command = trim((string)($_POST['command'] ?? ''));

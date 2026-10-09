@@ -131,7 +131,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         Local development only. Enter a PowerShell command below.
     </p>
 
-    <form method="POST">
+ 
+
+    <h3>Output</h3>
+
+    <pre><?= htmlspecialchars(
+        $output,
+        ENT_QUOTES,
+        'UTF-8'
+    ) ?></pre>
+       <form method="POST">
         <input
             type="text"
             name="command"
@@ -147,14 +156,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <button type="submit">Run</button>
     </form>
-
-    <h3>Output</h3>
-
-    <pre><?= htmlspecialchars(
-        $output,
-        ENT_QUOTES,
-        'UTF-8'
-    ) ?></pre>
 </div>
+    
 </body>
 </html>

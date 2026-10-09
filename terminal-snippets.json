@@ -38,6 +38,18 @@
       "template": "git commit -m \"${1:comment}\""
     },
       
+{
+  "trigger": "git-branch",
+  "description": "Create and switch to a new branch",
+  "template": "git branch ${1:new-branch-name}"
+},
+      
+      {
+  "trigger": "git-check",
+  "description": "switch to a  branch",
+  "template": "git checkout ${1:branch-name}"
+},
+      
     {
       "trigger": "kiteinfo",
       "description": "Show KitePHP console information",

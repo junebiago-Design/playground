@@ -68,6 +68,12 @@
       "template": "git push -u origin ${1:new-branch-name}"
     },
       
+       {
+      "trigger": "gitpushall",
+      "description": "Push all branches to origin",
+      "template": "git push --all origin"
+    },
+      
     {
       "trigger": "kiteinfo",
       "description": "Show KitePHP console information",

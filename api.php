@@ -347,6 +347,58 @@ switch ($action) {
             'isDefault' => WORKSPACE_ROOT === DEFAULT_WORKSPACE_ROOT,
         ]);
 
+    // -------- Browse the server filesystem (for the file picker) --------
+    case 'browse':
+        // Optional starting directory. Defaults to the workspace parent or home.
+        $start = isset($_GET['path']) ? $_GET['path'] : '';
+        if ($start === '') {
+            $start = WORKSPACE_ROOT;
+            // Try to go one level up so users can see siblings of the workspace
+            $parent = dirname(WORKSPACE_ROOT);
+            if ($parent && $parent !== WORKSPACE_ROOT && is_dir($parent)) {
+                $start = $parent;
+            }
+        }
+
+        $real = realpath($start);
+        if ($real === false || !is_dir($real)) {
+            // Fallback to workspace root
+            $real = WORKSPACE_ROOT;
+        }
+
+        $entries = @scandir($real);
+        if ($entries === false) fail('Cannot read directory', 500);
+
+        $dirs  = [];
+        $files = [];
+        foreach ($entries as $entry) {
+            if ($entry === '.' || $entry === '..') continue;
+            if ($entry[0] === '.') continue; // hide dotfiles
+            $full = $real . DIRECTORY_SEPARATOR . $entry;
+            if (is_dir($full)) {
+                if (!is_readable($full)) continue;
+                $dirs[] = $entry;
+            } else if (is_file($full)) {
+                $files[] = $entry;
+            }
+        }
+        sort($dirs, SORT_NATURAL | SORT_FLAG_CASE);
+        sort($files, SORT_NATURAL | SORT_FLAG_CASE);
+
+        // Build parent path (for ".." navigation) — only if inside a browsable chain
+        $parentPath = dirname($real);
+        $hasParent  = ($parentPath !== $real); // root of filesystem has no parent
+
+        respond([
+            'path'       => $real,
+            'name'       => basename($real),
+            'parent'     => $hasParent ? $parentPath : null,
+            'dirs'       => $dirs,
+            'files'      => $files,
+            'sep'        => DIRECTORY_SEPARATOR,
+            'isWindows'  => (DIRECTORY_SEPARATOR === '\\'),
+        ]);
+
     // -------- Snippets (loads every *.json in ./snippets, including subfolders) --------
     // Accepted formats (can be mixed across files):
     //   Native:   [ {trigger, template, description?}, ... ]  |  {snippets:[...]}  |  single {trigger, template}

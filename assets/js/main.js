@@ -66,7 +66,7 @@
     toastTimer = setTimeout(function(){ toastEl.classList.remove("show"); }, isError ? 6000 : 2400);
   }
 
-  // ---------- API (robust — checks content-type and reports bad responses) ----------
+  // ---------- API ----------
   function api(action, opts) {
     opts = opts || {};
     var method = opts.method || "GET";
@@ -85,11 +85,9 @@
     }
     return fetch(url, init).then(function (r) {
       return r.text().then(function (text) {
-        // Try to parse JSON
         var j = null;
         try { j = JSON.parse(text); }
         catch (e) {
-          // Show the raw first line so users can diagnose PHP warnings
           var preview = text.slice(0, 200).replace(/\s+/g, " ");
           throw new Error("Bad JSON response: " + preview);
         }
@@ -101,19 +99,13 @@
 
   // ---------- Snippets ----------
   window.customSnippets = window.customSnippets || [];
-
-  // Snippets in ./snippets/*.json are the source of truth. custom-snippets.js is only
-  // used as a fallback when the folder yields nothing (or the request fails).
-  // To also keep custom-snippets.js alongside the JSON ones, set this to true:
   var MERGE_STATIC_SNIPPETS = false;
-
   window.snippetStatus = { source: "static", files: [], errors: [] };
 
   function loadSnippetsFromServer() {
     if (!window._staticSnippets) window._staticSnippets = (window.customSnippets || []).slice();
     return api("snippets").then(function (data) {
       if (!data || !Array.isArray(data.snippets)) {
-        console.warn("Snippets endpoint unexpected data:", data);
         window.snippetStatus = { source: "static", files: [], errors: ["Unexpected response from server"] };
         return;
       }
@@ -121,7 +113,6 @@
       if (data.snippets.length === 0) {
         window.customSnippets = window._staticSnippets.slice();
         window.snippetStatus = { source: "static", files: [], errors: errs };
-        console.warn("[snippets] none found in " + (data.dir || "snippets/") + " — using custom-snippets.js", errs);
         return;
       }
       var list = data.snippets;
@@ -132,12 +123,9 @@
       }
       window.customSnippets = list;
       window.snippetStatus = { source: "json", files: data.files || [], errors: errs };
-      if (errs.length) console.warn("[snippets] warnings:", errs);
-      console.log("[snippets] loaded " + data.snippets.length + " from " + (data.files || []).join(", "));
     }).catch(function (err) {
       window.customSnippets = window._staticSnippets.slice();
       window.snippetStatus = { source: "static", files: [], errors: [err.message] };
-      console.warn("Could not load snippets:", err.message);
     });
   }
 
@@ -261,7 +249,7 @@
   editor.setSize("100%", "100%");
   window.addEventListener("resize", function () { editor.refresh(); });
 
-  // ---------- Hint helper (guarded) ----------
+  // ---------- Hint helper ----------
   function makeCustomHintHelper(editor, options) {
     var cur = editor.getCursor();
     var token = editor.getTokenAt(cur);
@@ -286,7 +274,6 @@
       }
     });
 
-    // Guard: anyword may not exist in every build
     try {
       if (typeof CodeMirror.hint.anyword === "function") {
         var anyword = CodeMirror.hint.anyword(editor, options);
@@ -553,7 +540,7 @@
   function saveAsActiveTab() {
     if (activeTabIndex < 0) { toast("No file open", true); return; }
     var tab = openTabs[activeTabIndex];
-    showModal("Save As", "New file path (relative to workspace)", tab.path,
+    showModal("Save As", "Destination path", tab.path,
       function (newPath) {
         if (!newPath || newPath === tab.path) return;
         api("saveAs", { method: "POST", body: {
@@ -566,7 +553,8 @@
           .then(function () { openFile(newPath); })
           .catch(function (err) { toast("Save As failed: " + err.message, true); });
       },
-      "Example: src/backup.php  — or  archive/old-index.php"
+      "Pick a folder below, then type a filename — or type a full path",
+      "saveas"
     );
   }
 
@@ -695,14 +683,199 @@
   var modalCancel = document.getElementById("modal-cancel");
   var modalCallback = null;
 
-  function showModal(title, label, def, cb, hint) {
+  var pickerArea    = document.getElementById("modal-picker-area");
+  var pickerTree    = document.getElementById("modal-picker-tree");
+  var pickerPath    = document.getElementById("modal-picker-path");
+  var pickerUp      = document.getElementById("picker-up");
+  var pickerHome    = document.getElementById("picker-home");
+  var pickerRefresh = document.getElementById("picker-refresh");
+
+  var pickerState = {
+    mode: null,
+    cwd: null,
+    parentPath: null,
+    selected: null,
+    lastBrowsed: null,
+  };
+
+  // ---- Server-side picker helpers ----
+  function setPickerPathDisplay(p) {
+    pickerPath.textContent = p;
+    pickerPath.title = p;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function markSelectedRow(row) {
+    pickerTree.querySelectorAll(".picker-row.selected").forEach(function (el) {
+      el.classList.remove("selected");
+    });
+    if (row) row.classList.add("selected");
+  }
+
+  function browseTo(path) {
+    pickerTree.innerHTML = '<div class="picker-loading">Loading…</div>';
+    pickerPath.textContent = path || "…";
+    api("browse", { query: { path: path || "" } })
+      .then(function (data) {
+        pickerState.cwd = data.path;
+        pickerState.parentPath = data.parent;
+        pickerState.lastBrowsed = data.path;
+        renderPickerEntries(data);
+      })
+      .catch(function (err) {
+        pickerTree.innerHTML =
+          '<div class="picker-empty">Cannot open folder:<br>' +
+          escapeHtml(err.message) + "</div>";
+      });
+  }
+
+  function renderPickerEntries(data) {
+    pickerTree.innerHTML = "";
+    var sep = data.sep || "/";
+
+    if (data.parent) {
+      var upRow = document.createElement("div");
+      upRow.className = "picker-row";
+      upRow.innerHTML = '<span class="p-icon">⬆</span><span class="p-name">..</span>';
+      upRow.onclick = function (e) {
+        e.stopPropagation();
+        pickerState.selected = null;
+        browseTo(data.parent);
+      };
+      pickerTree.appendChild(upRow);
+    }
+
+    var hasAny = false;
+
+    // Folders first
+    (data.dirs || []).forEach(function (name) {
+      hasAny = true;
+      var fullPath = data.path + sep + name;
+      var row = document.createElement("div");
+      row.className = "picker-row";
+      if (pickerState.selected && pickerState.selected.path === fullPath) {
+        row.classList.add("selected");
+      }
+      row.innerHTML =
+        '<span class="p-icon">📁</span>' +
+        '<span class="p-name">' + escapeHtml(name) + '</span>' +
+        '<span class="p-arrow">▶</span>';
+      row.onclick = function (e) {
+        e.stopPropagation();
+        // Folder / save-as modes: single-click selects the folder
+        if (pickerState.mode === "folder" || pickerState.mode === "saveas") {
+          pickerState.selected = { type: "folder", name: name, path: fullPath };
+          markSelectedRow(row);
+          modalInput.value = fullPath;
+        }
+        // File mode: single-click enters the folder
+        if (pickerState.mode === "file") {
+          pickerState.selected = null;
+          browseTo(fullPath);
+        }
+      };
+      row.ondblclick = function (e) {
+        e.stopPropagation();
+        pickerState.selected = null;
+        browseTo(fullPath);
+      };
+      pickerTree.appendChild(row);
+    });
+
+    // Then files
+    (data.files || []).forEach(function (name) {
+      hasAny = true;
+      var fullPath = data.path + sep + name;
+      var row = document.createElement("div");
+      row.className = "picker-row";
+      if (pickerState.selected && pickerState.selected.path === fullPath) {
+        row.classList.add("selected");
+      }
+      row.innerHTML =
+        '<span class="p-icon">📄</span>' +
+        '<span class="p-name">' + escapeHtml(name) + '</span>';
+      row.onclick = function (e) {
+        e.stopPropagation();
+        if (pickerState.mode === "file" || pickerState.mode === "saveas") {
+          pickerState.selected = { type: "file", name: name, path: fullPath };
+          markSelectedRow(row);
+          modalInput.value = fullPath;
+        }
+      };
+      row.ondblclick = function (e) {
+        e.stopPropagation();
+        if (pickerState.mode === "file") {
+          pickerState.selected = { type: "file", name: name, path: fullPath };
+          modalInput.value = fullPath;
+          confirmPickerSelection();
+        }
+      };
+      pickerTree.appendChild(row);
+    });
+
+    if (!hasAny) {
+      var empty = document.createElement("div");
+      empty.className = "picker-empty";
+      empty.textContent = "This folder is empty.";
+      pickerTree.appendChild(empty);
+    }
+
+    setPickerPathDisplay(data.path);
+    pickerUp.disabled = !data.parent;
+  }
+
+  function confirmPickerSelection() {
+    var typed = modalInput.value.trim();
+    if (typed) {
+      if (modalCallback) modalCallback(typed);
+      hideModal();
+      return;
+    }
+    if (pickerState.selected) {
+      if (modalCallback) modalCallback(pickerState.selected.path);
+      hideModal();
+      return;
+    }
+    if (pickerState.mode === "folder" && pickerState.cwd) {
+      if (modalCallback) modalCallback(pickerState.cwd);
+      hideModal();
+      return;
+    }
+    toast("Please select a " + (pickerState.mode === "folder" ? "folder" : "file"), true);
+  }
+
+  function showModal(title, label, def, cb, hint, pickerMode) {
     modalTitle.textContent = title;
     modalLabel.textContent = label;
     modalInput.value = def || "";
     modalCallback = cb;
+    pickerState.mode = pickerMode || null;
+    pickerState.selected = null;
+    pickerState.cwd = null;
+    pickerState.parentPath = null;
 
     if (hint) { modalHint.textContent = hint; modalHint.style.display = "block"; }
     else { modalHint.textContent = ""; modalHint.style.display = "none"; }
+
+    if (pickerMode) {
+      pickerArea.classList.add("open");
+      var startPath = "";
+      if (def && (def.indexOf("/") === 0 || /^[A-Za-z]:[\\\/]/.test(def))) {
+        var norm = def.replace(/\\/g, "/");
+        var lastSlash = norm.lastIndexOf("/");
+        if (lastSlash > 0) startPath = norm.slice(0, lastSlash);
+      }
+      if (!startPath && pickerState.lastBrowsed) startPath = pickerState.lastBrowsed;
+      browseTo(startPath);
+    } else {
+      pickerArea.classList.remove("open");
+      pickerTree.innerHTML = "";
+    }
 
     modalBackdrop.classList.add("open");
     setTimeout(function () {
@@ -716,21 +889,48 @@
       }
     }, 30);
   }
+
   function hideModal() {
     modalBackdrop.classList.remove("open");
     modalCallback = null;
+    pickerState.mode = null;
+    pickerState.selected = null;
   }
+
   modalOk.addEventListener("click", function () {
-    if (modalCallback) modalCallback(modalInput.value.trim());
-    hideModal();
+    if (pickerState.mode) {
+      confirmPickerSelection();
+    } else {
+      if (modalCallback) modalCallback(modalInput.value.trim());
+      hideModal();
+    }
   });
+
   modalCancel.addEventListener("click", hideModal);
   modalBackdrop.addEventListener("click", function (e) {
     if (e.target === modalBackdrop) hideModal();
   });
   modalInput.addEventListener("keydown", function (e) {
-    if (e.key === "Enter") { if (modalCallback) modalCallback(modalInput.value.trim()); hideModal(); }
+    if (e.key === "Enter") {
+      if (pickerState.mode) confirmPickerSelection();
+      else { if (modalCallback) modalCallback(modalInput.value.trim()); hideModal(); }
+    }
     if (e.key === "Escape") hideModal();
+  });
+
+  pickerUp.addEventListener("click", function () {
+    if (pickerState.parentPath) {
+      pickerState.selected = null;
+      browseTo(pickerState.parentPath);
+    }
+  });
+  pickerHome.addEventListener("click", function () {
+    pickerState.selected = null;
+    browseTo("");
+  });
+  pickerRefresh.addEventListener("click", function () {
+    if (pickerState.cwd) browseTo(pickerState.cwd);
+    else browseTo("");
   });
 
   // ---------- Menu ----------
@@ -805,7 +1005,7 @@
 
   // ---------- Open File / Folder ----------
   function promptOpenFile() {
-    showModal("Open File", "Full path to the file", "",
+    showModal("Open File", "File path", "",
       function (path) {
         if (!path) return;
         api("setRoot", { method: "POST", body: { path: path } })
@@ -820,12 +1020,13 @@
           })
           .catch(function (err) { toast("Open failed: " + err.message, true); });
       },
-      "Windows: C:\\Users\\You\\project\\index.php   •   Linux/macOS: /home/you/project/index.php"
+      "Browse the tree below, or type a full path",
+      "file"
     );
   }
 
   function promptOpenFolder() {
-    showModal("Open Folder", "Full path to the folder", "",
+    showModal("Open Folder", "Folder path", "",
       function (path) {
         if (!path) return;
         api("setRoot", { method: "POST", body: { path: path } })
@@ -836,7 +1037,8 @@
           })
           .catch(function (err) { toast("Open failed: " + err.message, true); });
       },
-      "Windows: C:\\Users\\You\\project   •   Linux/macOS: /home/you/project"
+      "Browse the tree below, or type a full path",
+      "folder"
     );
   }
 

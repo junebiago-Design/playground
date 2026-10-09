@@ -97,7 +97,7 @@
     });
   }
 
-  // ---------- Snippets ----------
+  // ---------- Snippets (CodeMirror editor) ----------
   window.customSnippets = window.customSnippets || [];
   var MERGE_STATIC_SNIPPETS = false;
   window.snippetStatus = { source: "static", files: [], errors: [] };
@@ -129,7 +129,7 @@
     });
   }
 
-  // ---------- Snippet engine ----------
+  // ---------- Snippet engine (CodeMirror) ----------
   function parseSnippet(template) {
     var text = "", stops = {}, i = 0;
     while (i < template.length) {
@@ -333,6 +333,10 @@
       rootNameEl.textContent = info.root;
       rootNameEl.title = info.path;
       document.title = info.root + " — Playground-Editor";
+      if (bottomCwdEl) {
+        bottomCwdEl.textContent = info.path;
+        bottomCwdEl.title = info.path;
+      }
     }).catch(function () {
       rootNameEl.textContent = "workspace";
     });
@@ -698,7 +702,6 @@
     lastBrowsed: null,
   };
 
-  // ---- Server-side picker helpers ----
   function setPickerPathDisplay(p) {
     pickerPath.textContent = p;
     pickerPath.title = p;
@@ -752,7 +755,6 @@
 
     var hasAny = false;
 
-    // Folders first
     (data.dirs || []).forEach(function (name) {
       hasAny = true;
       var fullPath = data.path + sep + name;
@@ -767,13 +769,11 @@
         '<span class="p-arrow">▶</span>';
       row.onclick = function (e) {
         e.stopPropagation();
-        // Folder / save-as modes: single-click selects the folder
         if (pickerState.mode === "folder" || pickerState.mode === "saveas") {
           pickerState.selected = { type: "folder", name: name, path: fullPath };
           markSelectedRow(row);
           modalInput.value = fullPath;
         }
-        // File mode: single-click enters the folder
         if (pickerState.mode === "file") {
           pickerState.selected = null;
           browseTo(fullPath);
@@ -787,7 +787,6 @@
       pickerTree.appendChild(row);
     });
 
-    // Then files
     (data.files || []).forEach(function (name) {
       hasAny = true;
       var fullPath = data.path + sep + name;
@@ -934,9 +933,9 @@
   });
 
   // ---------- Sidebar toggle ----------
-  var bodyEl       = document.getElementById("body");
-  var toggleBtn    = document.getElementById("btn-toggle-sidebar");
-  var SIDEBAR_KEY  = "pg-sidebar-hidden";
+  var bodyEl      = document.getElementById("body");
+  var toggleBtn   = document.getElementById("btn-toggle-sidebar");
+  var SIDEBAR_KEY = "pg-sidebar-hidden";
 
   function setSidebarHidden(hidden) {
     bodyEl.classList.toggle("sidebar-hidden", hidden);
@@ -945,7 +944,6 @@
       ? "Show Explorer panel (Ctrl+B)"
       : "Hide Explorer panel (Ctrl+B)";
     try { localStorage.setItem(SIDEBAR_KEY, hidden ? "1" : "0"); } catch (e) {}
-    // Let the CSS transition finish, then refresh the editor so it re-measures
     setTimeout(function () { editor.refresh(); }, 200);
   }
 
@@ -953,7 +951,6 @@
     setSidebarHidden(!bodyEl.classList.contains("sidebar-hidden"));
   }
 
-  // Restore the saved state on load
   try {
     if (localStorage.getItem(SIDEBAR_KEY) === "1") {
       bodyEl.classList.add("sidebar-hidden");
@@ -963,6 +960,410 @@
   } catch (e) {}
 
   toggleBtn.addEventListener("click", toggleSidebar);
+
+  // ============================================================
+  // BOTTOM PANEL (Terminal / Output)
+  // ============================================================
+  var bottomPanel      = document.getElementById("bottom-panel");
+  var bottomResizer    = document.getElementById("bottom-resizer");
+  var bottomHeader     = document.getElementById("bottom-header");
+  var bottomCwdEl      = document.getElementById("bottom-cwd");
+  var bottomBtnClose   = document.getElementById("bottom-btn-close");
+  var bottomBtnClear   = document.getElementById("bottom-btn-clear");
+  var bottomBtnRefresh = document.getElementById("bottom-btn-refresh");
+  var bottomTabs       = bottomHeader.querySelectorAll(".bottom-tab");
+  var paneTerminal     = document.getElementById("pane-terminal");
+  var paneOutput       = document.getElementById("pane-output");
+  var terminalOut      = document.getElementById("terminal-out");
+  var terminalForm     = document.getElementById("terminal-form");
+  var terminalInput    = document.getElementById("terminal-input");
+  var outputView       = document.getElementById("output-view");
+  var termSuggestions  = document.getElementById("terminal-suggestions");
+
+  var BOTTOM_HEIGHT_KEY = "pg-bottom-height";
+  var BOTTOM_HIDDEN_KEY = "pg-bottom-hidden";
+  var BOTTOM_ACTIVE_KEY = "pg-bottom-active";
+
+  var DEFAULT_BOTTOM_H = 260;
+  var MIN_BOTTOM_H     = 80;
+
+  // ---- Restore saved state ----
+  var savedHeight = DEFAULT_BOTTOM_H;
+  var savedHidden = false;
+  var savedTab    = "terminal";
+  try {
+    var hRaw = parseInt(localStorage.getItem(BOTTOM_HEIGHT_KEY) || "", 10);
+    if (!isNaN(hRaw) && hRaw >= MIN_BOTTOM_H) savedHeight = hRaw;
+    savedHidden = localStorage.getItem(BOTTOM_HIDDEN_KEY) === "1";
+    var tRaw = localStorage.getItem(BOTTOM_ACTIVE_KEY);
+    if (tRaw === "terminal" || tRaw === "output") savedTab = tRaw;
+  } catch (e) {}
+
+  if (savedHidden) {
+    bottomPanel.classList.add("collapsed");
+  } else {
+    bottomPanel.style.height = savedHeight + "px";
+  }
+
+  // ---- Tab switching ----
+  function setActiveBottomTab(name) {
+    bottomTabs.forEach(function (tab) {
+      tab.classList.toggle("active", tab.getAttribute("data-panel") === name);
+    });
+    paneTerminal.classList.toggle("active", name === "terminal");
+    paneOutput.classList.toggle("active", name === "output");
+    try { localStorage.setItem(BOTTOM_ACTIVE_KEY, name); } catch (e) {}
+    if (name === "terminal") {
+      setTimeout(function () { terminalInput.focus(); }, 30);
+    }
+    editor.refresh();
+  }
+  setActiveBottomTab(savedTab);
+
+  bottomTabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      setActiveBottomTab(tab.getAttribute("data-panel"));
+    });
+  });
+
+  // ---- Show / Hide ----
+  function showBottomPanel() {
+    bottomPanel.classList.remove("collapsed");
+    var targetH = savedHeight || DEFAULT_BOTTOM_H;
+    bottomPanel.style.height = targetH + "px";
+    try { localStorage.setItem(BOTTOM_HIDDEN_KEY, "0"); } catch (e) {}
+    setTimeout(function () { editor.refresh(); }, 220);
+    if (bottomPanel.querySelector(".bottom-tab.active").getAttribute("data-panel") === "terminal") {
+      setTimeout(function () { terminalInput.focus(); }, 240);
+    }
+  }
+
+  function hideBottomPanel() {
+    var currentH = bottomPanel.offsetHeight;
+    if (currentH >= MIN_BOTTOM_H) {
+      savedHeight = currentH;
+      try { localStorage.setItem(BOTTOM_HEIGHT_KEY, String(savedHeight)); } catch (e) {}
+    }
+    bottomPanel.classList.add("collapsed");
+    try { localStorage.setItem(BOTTOM_HIDDEN_KEY, "1"); } catch (e) {}
+    setTimeout(function () { editor.refresh(); }, 220);
+  }
+
+  function toggleBottomPanel() {
+    if (bottomPanel.classList.contains("collapsed")) showBottomPanel();
+    else hideBottomPanel();
+  }
+
+  bottomBtnClose.addEventListener("click", hideBottomPanel);
+  bottomBtnRefresh.addEventListener("click", function () {
+    loadTree();
+    updateRootBadge();
+    toast("Refreshed");
+  });
+
+  bottomBtnClear.addEventListener("click", function () {
+    if (paneOutput.classList.contains("active")) {
+      outputView.textContent = "(no output yet)";
+    } else {
+      terminalOut.textContent = "";
+    }
+  });
+
+  // ---- Resize via drag ----
+  var resizing = false;
+  var resizeStartY = 0;
+  var resizeStartH = 0;
+
+  bottomResizer.addEventListener("mousedown", function (e) {
+    if (bottomPanel.classList.contains("collapsed")) return;
+    resizing = true;
+    resizeStartY = e.clientY;
+    resizeStartH = bottomPanel.offsetHeight;
+    bodyEl.classList.add("resizing");
+    document.body.classList.add("resizing");
+    bottomPanel.classList.add("no-transition");
+    e.preventDefault();
+  });
+
+  document.addEventListener("mousemove", function (e) {
+    if (!resizing) return;
+    var delta = resizeStartY - e.clientY;
+    var newH = resizeStartH + delta;
+    var maxH = Math.max(MIN_BOTTOM_H, Math.floor(window.innerHeight * 0.8));
+    if (newH < MIN_BOTTOM_H) newH = MIN_BOTTOM_H;
+    if (newH > maxH) newH = maxH;
+    bottomPanel.style.height = newH + "px";
+    editor.refresh();
+  });
+
+  document.addEventListener("mouseup", function () {
+    if (!resizing) return;
+    resizing = false;
+    bodyEl.classList.remove("resizing");
+    document.body.classList.remove("resizing");
+    setTimeout(function () { bottomPanel.classList.remove("no-transition"); }, 0);
+    var finalH = bottomPanel.offsetHeight;
+    if (finalH >= MIN_BOTTOM_H) {
+      savedHeight = finalH;
+      try { localStorage.setItem(BOTTOM_HEIGHT_KEY, String(savedHeight)); } catch (e) {}
+    }
+    editor.refresh();
+  });
+
+  // ============================================================
+  // Terminal snippets (shared with terminal/index.php)
+  // ============================================================
+  var terminalSnippets = [];
+  var termMatches = [];
+  var termActiveIndex = 0;
+
+  function loadTerminalSnippets() {
+    return fetch("terminal/index.php?action=snippets", { cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        terminalSnippets = Array.isArray(data.snippets) ? data.snippets : [];
+        if (data.error) {
+          console.warn("[terminal snippets]", data.error);
+        }
+        console.log("[terminal snippets] loaded " + terminalSnippets.length);
+      })
+      .catch(function (err) {
+        terminalSnippets = [];
+        console.warn("[terminal snippets] failed:", err.message);
+      });
+  }
+
+  function closeTermSuggestions() {
+    if (!termSuggestions) return;
+    termSuggestions.classList.remove("open");
+    termSuggestions.replaceChildren();
+    termMatches = [];
+    termActiveIndex = 0;
+  }
+
+  function insertTerminalSnippet(snippet) {
+    var raw = String(snippet.template == null ? "" : snippet.template);
+    var m = raw.match(/\$\{(\d+)(?::([^}]*))?\}/);
+    if (!m) {
+      terminalInput.value = raw;
+      closeTermSuggestions();
+      terminalInput.focus();
+      try { terminalInput.setSelectionRange(raw.length, raw.length); } catch (e) {}
+      return;
+    }
+    var placeholder = m[2] == null ? "" : m[2];
+    var before = raw.slice(0, m.index);
+    var after  = raw.slice(m.index + m[0].length);
+    terminalInput.value = before + placeholder + after;
+    closeTermSuggestions();
+    terminalInput.focus();
+    try {
+      terminalInput.setSelectionRange(before.length, before.length + placeholder.length);
+    } catch (e) {}
+  }
+
+  function renderTermSuggestions() {
+    if (!termSuggestions) return;
+    var typed = terminalInput.value.trim().toLowerCase();
+    if (!typed || terminalSnippets.length === 0) {
+      closeTermSuggestions();
+      return;
+    }
+
+    termMatches = terminalSnippets.filter(function (sn) {
+      var t = String(sn.trigger == null ? "" : sn.trigger).toLowerCase();
+      return t.indexOf(typed) === 0 || t.indexOf(typed) !== -1;
+    }).slice(0, 8);
+
+    if (termMatches.length === 0) {
+      closeTermSuggestions();
+      return;
+    }
+
+    termActiveIndex = Math.min(termActiveIndex, termMatches.length - 1);
+    termSuggestions.replaceChildren();
+
+    termMatches.forEach(function (sn, i) {
+      var row = document.createElement("div");
+      row.className = "sugg" + (i === termActiveIndex ? " active" : "");
+      row.setAttribute("role", "option");
+      row.setAttribute("aria-selected", i === termActiveIndex ? "true" : "false");
+
+      var trig = document.createElement("span");
+      trig.className = "sugg-trigger";
+      trig.textContent = sn.trigger || "(no trigger)";
+      row.appendChild(trig);
+
+      var desc = document.createElement("span");
+      desc.className = "sugg-desc";
+      desc.textContent = sn.description || sn.template || "";
+      row.appendChild(desc);
+
+      row.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        insertTerminalSnippet(sn);
+      });
+
+      termSuggestions.appendChild(row);
+    });
+
+    termSuggestions.classList.add("open");
+  }
+
+  if (terminalInput) {
+    terminalInput.addEventListener("input", function () {
+      termActiveIndex = 0;
+      renderTermSuggestions();
+    });
+
+    terminalInput.addEventListener("keydown", function (e) {
+      if (e.key === "Tab" && termMatches.length) {
+        e.preventDefault();
+        var typed = terminalInput.value.trim().toLowerCase();
+        var exact = null;
+        for (var i = 0; i < termMatches.length; i++) {
+          if (String(termMatches[i].trigger || "").toLowerCase() === typed) {
+            exact = termMatches[i];
+            break;
+          }
+        }
+        insertTerminalSnippet(exact || termMatches[termActiveIndex]);
+      } else if (e.key === "ArrowDown" && termMatches.length) {
+        e.preventDefault();
+        termActiveIndex = (termActiveIndex + 1) % termMatches.length;
+        renderTermSuggestions();
+      } else if (e.key === "ArrowUp" && termMatches.length) {
+        e.preventDefault();
+        termActiveIndex = (termActiveIndex - 1 + termMatches.length) % termMatches.length;
+        renderTermSuggestions();
+      } else if (e.key === "Escape") {
+        closeTermSuggestions();
+      }
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    if (!e.target.closest("#terminal-form")) closeTermSuggestions();
+  });
+
+  // Load snippets once at startup (also reload when the user clicks ⟳)
+  loadTerminalSnippets();
+
+  // ---- Terminal execution (via hidden iframe) ----
+  var terminalHistory = [];
+  var terminalHistoryIndex = -1;
+
+  function appendTerminal(text, isError) {
+    var span = document.createElement("span");
+    if (isError) span.className = "err";
+    span.textContent = text;
+    terminalOut.appendChild(span);
+    terminalOut.appendChild(document.createTextNode("\n"));
+    terminalOut.scrollTop = terminalOut.scrollHeight;
+  }
+
+  function runTerminalCommand(cmd) {
+    if (!cmd) return;
+    appendTerminal("PS> " + cmd);
+
+    var iframeName = "terminal-frame-" + Date.now();
+    var iframe = document.createElement("iframe");
+    iframe.name = iframeName;
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
+
+    var form = document.createElement("form");
+    form.method = "POST";
+    form.action = "terminal/index.php";
+    form.target = iframeName;
+    form.style.display = "none";
+
+    var cmdInput = document.createElement("input");
+    cmdInput.type = "hidden";
+    cmdInput.name = "command";
+    cmdInput.value = cmd;
+    form.appendChild(cmdInput);
+
+    var rootInput = document.createElement("input");
+    rootInput.type = "hidden";
+    rootInput.name = "root";
+    rootInput.value = (bottomCwdEl && bottomCwdEl.textContent) || "";
+    form.appendChild(rootInput);
+
+    document.body.appendChild(form);
+    form.submit();
+
+    var cleanup = function () {
+      if (form.parentNode) form.parentNode.removeChild(form);
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    };
+
+    iframe.addEventListener("load", function () {
+      try {
+        var doc = iframe.contentDocument || iframe.contentWindow.document;
+        var out = doc.getElementById("output");
+        if (out) {
+          var text = out.textContent || "";
+          text = text.replace(/^\s+|\s+$/g, "");
+          text = text.replace(/^Ready\.[^\n]*\n/, "");
+          if (text) appendTerminal(text, /Exit code: [1-9]/.test(text));
+        } else {
+          appendTerminal("(no output)", false);
+        }
+      } catch (e) {
+        appendTerminal("Failed to read terminal response: " + e.message, true);
+      }
+      cleanup();
+    });
+
+    setTimeout(function () {
+      if (form.parentNode) cleanup();
+    }, 30000);
+  }
+
+  if (terminalForm) {
+    terminalForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var cmd = terminalInput.value.trim();
+      if (!cmd) return;
+      terminalInput.value = "";
+      if (terminalHistory[terminalHistory.length - 1] !== cmd) {
+        terminalHistory.push(cmd);
+      }
+      terminalHistoryIndex = terminalHistory.length;
+      closeTermSuggestions();
+      runTerminalCommand(cmd);
+    });
+  }
+
+  terminalInput.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowUp" && termMatches.length === 0) {
+      if (terminalHistory.length === 0) return;
+      e.preventDefault();
+      terminalHistoryIndex = Math.max(0, terminalHistoryIndex - 1);
+      terminalInput.value = terminalHistory[terminalHistoryIndex] || "";
+    } else if (e.key === "ArrowDown" && termMatches.length === 0) {
+      if (terminalHistory.length === 0) return;
+      e.preventDefault();
+      terminalHistoryIndex = Math.min(terminalHistory.length, terminalHistoryIndex + 1);
+      terminalInput.value = terminalHistory[terminalHistoryIndex] || "";
+    }
+  });
+
+  // Show CWD inside the terminal placeholder
+  setTimeout(function () {
+    if (bottomCwdEl && bottomCwdEl.textContent && bottomCwdEl.textContent !== "—") {
+      terminalOut.textContent = "Ready. Working directory: " + bottomCwdEl.textContent + "\n";
+    }
+  }, 400);
+
+  // Also fetch snippets when the user clicks the ⟳ button
+  bottomBtnRefresh.addEventListener("click", function () {
+    loadTerminalSnippets();
+  });
 
   // ---------- Menu ----------
   var menuFileBtn = document.getElementById("menu-file");
@@ -1166,9 +1567,11 @@
     if (mod && !shift && !alt && key === "e") {
       e.preventDefault(); e.stopPropagation(); doExportZip(); return true;
     }
-    // Ctrl+B — toggle the Explorer sidebar
     if (mod && !shift && !alt && key === "b") {
       e.preventDefault(); e.stopPropagation(); toggleSidebar(); return true;
+    }
+    if (mod && !shift && !alt && (key === "`" || key === "~")) {
+      e.preventDefault(); e.stopPropagation(); toggleBottomPanel(); return true;
     }
     if (key === "escape") { closeDropdown(); hideContextMenu(); return false; }
     return false;

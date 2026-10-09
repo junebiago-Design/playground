@@ -43,6 +43,7 @@ if (!empty($_GET['root'])) {
     $requested = realpath((string)$_GET['root']);
     if ($requested !== false && is_dir($requested)) {
         $workingDirectory = $requested;
+        // Persist it so subsequent visits remember it too.
         if (session_status() === PHP_SESSION_ACTIVE) {
             $_SESSION['root'] = $requested;
         }
@@ -55,6 +56,8 @@ elseif (!empty($_SESSION['root']) && is_dir($_SESSION['root'])) {
 // 3) Default from config.php
 elseif (is_file($editorConfigFile)) {
     if (!defined('DEFAULT_WORKSPACE_ROOT')) {
+        // config.php uses define() and starts a session; both are already
+        // guarded there, so including it here is safe.
         @include $editorConfigFile;
     }
     if (defined('DEFAULT_WORKSPACE_ROOT') && is_dir(DEFAULT_WORKSPACE_ROOT)) {
@@ -65,96 +68,6 @@ elseif (is_file($editorConfigFile)) {
 // Final safety net — must resolve to a real directory.
 if (!is_dir($workingDirectory)) {
     $workingDirectory = $defaultWorkspace;
-}
-
-// ---------------------------------------------------------------------------
-// AJAX endpoint: /terminal/index.php?action=snippets
-// Returns the parsed terminal-snippets.json as JSON for the inline terminal.
-// ---------------------------------------------------------------------------
-if (($_GET['action'] ?? '') === 'snippets') {
-    header('Content-Type: application/json; charset=utf-8');
-    header('Cache-Control: no-store');
-
-    $snippetsFile = __DIR__ . DIRECTORY_SEPARATOR . 'terminal-snippets.json';
-    if (!is_file($snippetsFile)) {
-        echo json_encode(['snippets' => [], 'error' => 'terminal-snippets.json not found']);
-        exit;
-    }
-
-    $raw = (string)file_get_contents($snippetsFile);
-
-    // Lenient decode: strip BOM, // comments, /* */ comments, trailing commas.
-    $lenientDecode = function (string $text): ?array {
-        $text = preg_replace('/^\xEF\xBB\xBF/', '', $text);
-        $data = json_decode($text, true);
-        if (is_array($data)) return $data;
-
-        $out = '';
-        $inStr = false;
-        $len = strlen($text);
-        for ($i = 0; $i < $len; $i++) {
-            $c = $text[$i];
-            $n = $i + 1 < $len ? $text[$i + 1] : '';
-            if ($inStr) {
-                $out .= $c;
-                if ($c === '\\') { $out .= $n; $i++; }
-                elseif ($c === '"') $inStr = false;
-            } elseif ($c === '"') { $inStr = true; $out .= $c; }
-            elseif ($c === '/' && $n === '/') { while ($i < $len && $text[$i] !== "\n") $i++; $out .= "\n"; }
-            elseif ($c === '/' && $n === '*') { $i += 2; while ($i + 1 < $len && !($text[$i] === '*' && $text[$i + 1] === '/')) $i++; $i++; }
-            else $out .= $c;
-        }
-        $out = preg_replace('/,(\s*[}\]])/', '$1', $out);
-        $decoded = json_decode($out, true);
-        return is_array($decoded) ? $decoded : null;
-    };
-
-    $data = $lenientDecode($raw);
-    if ($data === null) {
-        echo json_encode(['snippets' => [], 'error' => 'Invalid JSON in terminal-snippets.json']);
-        exit;
-    }
-
-    // Accept several shapes:
-    //   { "snippets": [ {trigger, template, description?}, ... ] }
-    //   [ {trigger, template, description?}, ... ]
-    //   { "Name": { "prefix": "...", "body": "..." }, ... }   (VS Code style)
-    $list = [];
-    if (isset($data['snippets']) && is_array($data['snippets'])) {
-        foreach ($data['snippets'] as $sn) {
-            if (!is_array($sn)) continue;
-            $trigger = isset($sn['trigger']) ? (string)$sn['trigger'] : '';
-            $template = isset($sn['template']) ? (string)$sn['template'] : '';
-            $description = isset($sn['description']) ? (string)$sn['description'] : '';
-            if ($trigger === '' || $template === '') continue;
-            $list[] = ['trigger' => $trigger, 'template' => $template, 'description' => $description];
-        }
-    } elseif (array_values($data) === $data) {
-        foreach ($data as $sn) {
-            if (!is_array($sn)) continue;
-            $trigger = isset($sn['trigger']) ? (string)$sn['trigger'] : '';
-            $template = isset($sn['template']) ? (string)$sn['template'] : '';
-            $description = isset($sn['description']) ? (string)$sn['description'] : '';
-            if ($trigger === '' || $template === '') continue;
-            $list[] = ['trigger' => $trigger, 'template' => $template, 'description' => $description];
-        }
-    } else {
-        foreach ($data as $name => $sn) {
-            if (!is_array($sn)) continue;
-            $template = $sn['body'] ?? $sn['template'] ?? '';
-            if (is_array($template)) $template = implode("\n", $template);
-            $template = (string)$template;
-            $prefixes = $sn['prefix'] ?? '';
-            if (is_array($prefixes)) $prefixes = $prefixes[0] ?? '';
-            $trigger = (string)$prefixes;
-            $description = isset($sn['description']) ? (string)$sn['description'] : (string)$name;
-            if ($trigger === '' || $template === '') continue;
-            $list[] = ['trigger' => $trigger, 'template' => $template, 'description' => $description];
-        }
-    }
-
-    echo json_encode(['snippets' => $list]);
-    exit;
 }
 
 $output   = '';
@@ -187,12 +100,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     2 => ['pipe', 'w']
                 ],
                 $pipes,
-                $workingDirectory
+                $workingDirectory   // <-- active workspace
             );
 
             if (is_resource($process)) {
                 fclose($pipes[0]);
 
+                // Read both streams so PowerShell output and errors are shown.
                 $stdout = stream_get_contents($pipes[1]);
                 $stderr = stream_get_contents($pipes[2]);
 
@@ -313,14 +227,7 @@ function h(string $value): string
             color: #cbd5e1;
             font-size: .85rem;
             flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
         }
-        .panel-title .snippet-status { color: #64748b; font-size: .78rem; }
-        .panel-title .snippet-status.ok { color: #4ade80; }
-        .panel-title .snippet-status.err { color: #f87171; }
 
         #output {
             flex: 1 1 auto;
@@ -447,10 +354,7 @@ function h(string $value): string
     </header>
 
     <section class="panel" aria-label="Terminal output">
-        <div class="panel-title">
-            <span>Output</span>
-            <span class="snippet-status" id="snippet-status">Snippets: loading…</span>
-        </div>
+        <div class="panel-title">Output</div>
         <pre id="output" aria-live="polite"><?= h($output !== '' ? $output : "Ready. Working directory: " . $workingDirectory . "\nEnter a command below.\n") ?></pre>
     </section>
 
@@ -483,7 +387,6 @@ function h(string $value): string
     const input = document.getElementById('command');
     const form = document.getElementById('terminal-form');
     const suggestionsBox = document.getElementById('suggestions');
-    const snippetStatus = document.getElementById('snippet-status');
 
     let snippets = [];
     let matches = [];
@@ -495,31 +398,16 @@ function h(string $value): string
         input.setSelectionRange(0, 0);
     });
 
-    // Load snippets from the PHP endpoint (which reads terminal-snippets.json
-    // and normalises native / VS Code formats into a flat list).
-    fetch('index.php?action=snippets', { cache: 'no-store' })
+    fetch('terminal-snippets.json', { cache: 'no-store' })
         .then(response => {
-            if (!response.ok) throw new Error('HTTP ' + response.status);
+            if (!response.ok) throw new Error('Could not load snippets JSON');
             return response.json();
         })
         .then(data => {
             snippets = Array.isArray(data.snippets) ? data.snippets : [];
-            if (data.error) {
-                snippetStatus.textContent = 'Snippets: ' + data.error;
-                snippetStatus.className = 'snippet-status err';
-            } else if (snippets.length === 0) {
-                snippetStatus.textContent = 'Snippets: none found';
-                snippetStatus.className = 'snippet-status';
-            } else {
-                snippetStatus.textContent = 'Snippets: ' + snippets.length + ' loaded';
-                snippetStatus.className = 'snippet-status ok';
-            }
         })
-        .catch(err => {
+        .catch(() => {
             snippets = [];
-            snippetStatus.textContent = 'Snippets: failed to load';
-            snippetStatus.className = 'snippet-status err';
-            console.warn('Could not load snippets:', err);
         });
 
     function closeSuggestions() {
@@ -532,19 +420,6 @@ function h(string $value): string
     /*
      * Turn a VS Code-style snippet template into plain text and
      * select the first ${N:placeholder} so the user can type over it.
-     *
-     * Examples:
-     *   "git commit -m \"${1:comment}\""
-     *     -> "git commit -m \"comment\""
-     *     -> selects the word: comment
-     *
-     *   "git checkout ${1:branch-name}"
-     *     -> "git checkout branch-name"
-     *     -> selects: branch-name
-     *
-     *   "Get-ChildItem -Force"
-     *     -> "Get-ChildItem -Force"
-     *     -> cursor at end
      */
     function chooseSnippet(snippet) {
         const raw = String(snippet.template ?? '');

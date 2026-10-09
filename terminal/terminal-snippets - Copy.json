@@ -1,0 +1,93 @@
+{
+  "snippets": [
+    {
+      "trigger": "pwd",
+      "description": "Show the current working directory",
+      "template": "Get-Location"
+    },
+    {
+      "trigger": "ls",
+      "description": "List files and folders",
+      "template": "Get-ChildItem"
+    },
+    {
+      "trigger": "clear",
+      "description": "Clear the PowerShell screen (new process output is shown on the page)",
+      "template": "Clear-Host"
+    },
+    {
+      "trigger": "phpv",
+      "description": "Show the installed PHP version",
+      "template": "php -v"
+    },
+    {
+      "trigger": "git status",
+      "description": "Show Git working tree status",
+      "template": "git status"
+    },
+    
+     {
+      "trigger": "git add-all",
+      "description": "add all to Stage",
+      "template": "git add ."
+    },
+      
+        {
+      "trigger": "git commit",
+      "description": "Show Git working tree status",
+      "template": "git commit -m \"${1:comment}\""
+    },
+      
+{
+  "trigger": "git branch",
+  "description": "Create and switch to a new branch",
+  "template": "git branch"
+},
+      
+      {
+  "trigger": "git br-new",
+  "description": "Create a new branch",
+  "template": "git branch ${1:new-branch-name}"
+},
+      
+      {
+  "trigger": "git check",
+  "description": "switch to a  branch",
+  "template": "git checkout ${1:branch-name}"
+},
+      
+  {
+      "trigger": "git push",
+      "description": "Push current branch to origin",
+      "template": "git push origin ${1:branch-name}"
+    },
+      
+          {
+      "trigger": "git pushnew",
+      "description": "Push a brand new local branch to origin",
+      "template": "git push -u origin ${1:new-branch-name}"
+    },
+      
+       {
+      "trigger": "git pushall",
+      "description": "Push all branches to origin",
+      "template": "git push --all origin"
+    },
+      
+    {
+      "trigger": "kiteinfo",
+      "description": "Show KitePHP console information",
+      "template": "php console show:info"
+    },
+    {
+      "trigger": "cdkite",
+      "description": "Change to your KitePHP project folder (edit this path)",
+      "template": "Set-Location 'C:\\laragon\\www\\KitePHP'"
+    },
+    {
+      "trigger": "composer",
+      "description": "Run Composer install in the current project",
+      "template": "composer install"
+    }
+  ]
+}

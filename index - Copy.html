@@ -251,7 +251,6 @@
     background: #202020;
     border-top: 1px solid #2f2f2f;
     flex-shrink: 0;
-    position: relative;      /* anchor for suggestions popup */
   }
   #terminal-form .term-prompt {
     color: #4ec9b0;
@@ -259,12 +258,6 @@
     font-size: 12.5px;
     font-weight: 600;
     flex-shrink: 0;
-  }
-  #terminal-form .term-input-wrap {
-    position: relative;
-    flex: 1;
-    min-width: 0;
-    display: flex;
   }
   #terminal-form input {
     flex: 1;
@@ -283,52 +276,6 @@
     padding: 5px 12px;
     font-size: 12px;
     flex-shrink: 0;
-  }
-
-  /* Snippet suggestions dropdown (inside the terminal form) */
-  #terminal-suggestions {
-    position: absolute;
-    z-index: 20;
-    left: 0;
-    right: 0;
-    bottom: calc(100% + 6px);
-    display: none;
-    max-height: 220px;
-    overflow: auto;
-    border: 1px solid #334155;
-    border-radius: 6px;
-    background: #111827;
-    box-shadow: 0 12px 28px rgba(0,0,0,0.45);
-  }
-  #terminal-suggestions.open { display: block; }
-  #terminal-suggestions .sugg {
-    padding: 8px 12px;
-    border-bottom: 1px solid #263244;
-    cursor: pointer;
-    font-family: 'Fira Code', 'Consolas', monospace;
-    font-size: 12.5px;
-    color: #cbd5e1;
-  }
-  #terminal-suggestions .sugg:last-child { border-bottom: 0; }
-  #terminal-suggestions .sugg.active,
-  #terminal-suggestions .sugg:hover { background: #1e3a5f; }
-  #terminal-suggestions .sugg .sugg-trigger {
-    color: #7dd3fc;
-    font-weight: 600;
-  }
-  #terminal-suggestions .sugg .sugg-desc {
-    display: block;
-    margin-top: 2px;
-    color: #94a3b8;
-    font-size: 11.5px;
-    font-family: system-ui, sans-serif;
-    overflow-wrap: anywhere;
-  }
-  #terminal-suggestions .sugg-empty {
-    padding: 10px 12px;
-    color: #6a7a8e;
-    font-size: 12px;
-    text-align: center;
   }
 
   /* Output pane */
@@ -422,17 +369,14 @@
             <div id="terminal-out" aria-live="polite">Ready. Working directory: …</div>
             <form id="terminal-form" autocomplete="off">
               <span class="term-prompt">PS&gt;</span>
-              <div class="term-input-wrap">
-                <input
-                  id="terminal-input"
-                  type="text"
-                  name="command"
-                  placeholder="Type a command, e.g. Get-ChildItem  (Tab to accept snippet)"
-                  autocomplete="off"
-                  spellcheck="false"
-                >
-                <div id="terminal-suggestions" role="listbox" aria-label="Command snippets"></div>
-              </div>
+              <input
+                id="terminal-input"
+                type="text"
+                name="command"
+                placeholder="Type a command, e.g. Get-ChildItem"
+                autocomplete="off"
+                spellcheck="false"
+              >
               <button type="submit" class="btn">Run</button>
             </form>
           </div>

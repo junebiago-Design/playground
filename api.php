@@ -348,52 +348,111 @@ switch ($action) {
         ]);
 
     // -------- Snippets (loads every *.json in ./snippets, including subfolders) --------
-    // Accepted JSON shapes per file:
-    //   [ {trigger, template, description?}, ... ]
-    //   { "snippets": [ ... ] }
-    //   { trigger, template, ... }            (single snippet)
+    // Accepted formats (can be mixed across files):
+    //   Native:   [ {trigger, template, description?}, ... ]  |  {snippets:[...]}  |  single {trigger, template}
+    //   VS Code:  { "Name": { "prefix": "x" | ["x","y"], "body": "text" | ["line","line"], "description": "" } }
     case 'snippets':
         $byTrigger = []; $errors = []; $files = [];
         $dir = __DIR__ . '/snippets';
+
+        // Lenient JSON: strips BOM, // and /* */ comments, trailing commas
+        $lenientDecode = function ($text) {
+            $text = preg_replace('/^\xEF\xBB\xBF/', '', $text);
+            $data = json_decode($text, true);
+            if (is_array($data)) return [$data, null];
+            // remove comments outside of strings
+            $out = ''; $inStr = false; $len = strlen($text);
+            for ($i = 0; $i < $len; $i++) {
+                $c = $text[$i]; $n = $i + 1 < $len ? $text[$i + 1] : '';
+                if ($inStr) {
+                    $out .= $c;
+                    if ($c === '\\') { $out .= $n; $i++; }
+                    elseif ($c === '"') $inStr = false;
+                } elseif ($c === '"') { $inStr = true; $out .= $c; }
+                elseif ($c === '/' && $n === '/') { while ($i < $len && $text[$i] !== "\n") $i++; $out .= "\n"; }
+                elseif ($c === '/' && $n === '*') { $i += 2; while ($i + 1 < $len && !($text[$i] === '*' && $text[$i + 1] === '/')) $i++; $i++; }
+                else $out .= $c;
+            }
+            $out = preg_replace('/,(\s*[}\]])/', '$1', $out);
+            $data = json_decode($out, true);
+            return is_array($data) ? [$data, null] : [null, json_last_error_msg()];
+        };
+
+        // Convert VS Code syntax the editor doesn't know: ${1|a,b,c|} -> ${1:a}
+        $fixTemplate = function ($t) {
+            return preg_replace_callback('/\$\{(\d+)\|([^|}]*)\|\}/', function ($m) {
+                $opts = explode(',', $m[2]);
+                return '${' . $m[1] . ':' . $opts[0] . '}';
+            }, $t);
+        };
+
+        // Normalise one entry into zero or more {trigger, template, description}
+        $normalise = function ($sn, $name = '') use ($fixTemplate) {
+            $out = [];
+            if (!is_array($sn)) return $out;
+            $tpl = null;
+            if (isset($sn['template'])) $tpl = $sn['template'];
+            elseif (isset($sn['body']))  $tpl = $sn['body'];
+            if (is_array($tpl)) $tpl = implode("\n", $tpl);
+            if (!is_string($tpl)) return $out;
+
+            $triggers = [];
+            if (!empty($sn['trigger']) && is_string($sn['trigger'])) $triggers[] = $sn['trigger'];
+            if (isset($sn['prefix'])) foreach ((array)$sn['prefix'] as $pfx) if (is_string($pfx) && $pfx !== '') $triggers[] = $pfx;
+
+            $desc = isset($sn['description']) && is_string($sn['description']) ? $sn['description'] : $name;
+            foreach ($triggers as $t) {
+                $out[] = ['trigger' => $t, 'template' => $fixTemplate($tpl), 'description' => $desc];
+            }
+            return $out;
+        };
+
         if (is_dir($dir)) {
             $found = [];
-            $it = new RecursiveIteratorIterator(
-                new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS)
-            );
+            $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
             foreach ($it as $node) {
                 if (!$node->isFile()) continue;
-                if (strtolower($node->getExtension()) !== 'json') continue;
-                if ($node->getFilename()[0] === '.') continue; // ignore dotfiles
+                $ext = strtolower($node->getExtension());
+                if ($ext !== 'json' && $ext !== 'code-snippets') continue; // .code-snippets = VS Code export
+                if ($node->getFilename()[0] === '.') continue;
                 $found[] = $node->getPathname();
             }
-            sort($found, SORT_NATURAL | SORT_FLAG_CASE); // stable load order
+            sort($found, SORT_NATURAL | SORT_FLAG_CASE);
 
             foreach ($found as $f) {
                 $rel = ltrim(str_replace('\\', '/', substr($f, strlen($dir))), '/');
                 $text = file_get_contents($f);
                 if ($text === false) { $errors[] = $rel . ': cannot read file'; continue; }
-                $text = preg_replace('/^\xEF\xBB\xBF/', '', $text); // strip UTF-8 BOM
-                $data = json_decode($text, true);
-                if (!is_array($data)) {
-                    $errors[] = $rel . ': invalid JSON (' . json_last_error_msg() . ')';
-                    continue;
+                list($data, $err) = $lenientDecode($text);
+                if ($data === null) { $errors[] = $rel . ': invalid JSON (' . $err . ')'; continue; }
+
+                // Build candidate list: [entry, name]
+                $cands = [];
+                if (isset($data['snippets']) && is_array($data['snippets'])) {
+                    foreach ($data['snippets'] as $k => $v) $cands[] = [$v, is_string($k) ? $k : '', $k];
+                } elseif (isset($data['trigger']) || isset($data['prefix'])) {
+                    $cands[] = [$data, '', 0];
+                } else {
+                    foreach ($data as $k => $v) $cands[] = [$v, is_string($k) ? $k : '', $k];
                 }
 
-                // Normalise to a list of snippets
-                if (isset($data['snippets']) && is_array($data['snippets'])) $data = $data['snippets'];
-                elseif (isset($data['trigger']))                              $data = [$data];
-
-                $files[] = $rel;
-                foreach ($data as $i => $sn) {
-                    if (!is_array($sn) || empty($sn['trigger']) || !isset($sn['template'])) {
-                        $errors[] = $rel . ' #' . $i . ': needs "trigger" and "template"';
-                        continue;
-                    }
-                    $byTrigger[$sn['trigger']] = $sn; // later files override earlier ones
+                $count = 0;
+                foreach ($cands as $c) {
+                    $list = $normalise($c[0], $c[1]);
+                    if (!$list) { $errors[] = $rel . ' [' . $c[2] . ']: skipped (needs trigger/prefix and template/body)'; continue; }
+                    foreach ($list as $one) { $byTrigger[$one['trigger']] = $one; $count++; }
                 }
+                if ($count > 0) $files[] = $rel;
             }
+        } else {
+            $errors[] = 'Folder not found: ' . $dir;
         }
-        respond(['snippets' => array_values($byTrigger), 'errors' => $errors, 'files' => $files]);
+        respond([
+            'snippets' => array_values($byTrigger),
+            'errors'   => $errors,
+            'files'    => $files,
+            'dir'      => $dir,
+        ]);
 
     // -------- Save As --------
     case 'saveAs':

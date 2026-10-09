@@ -6,6 +6,13 @@
     "description": "Create a new code snippet definition",
     "template": "{\n  \"snippets\": [\n    {\n      \"trigger\": \"${1:triggerName}\",\n      \"description\": \"${2:Snippet description}\",\n      \"template\": \"${3:Your code here}\"\n    }\n  ]\n}$0"
 
+    },
+    
+      {
+   "trigger": "fuck",
+    "description": "Create a new code snippet definition",
+    "template": "{\n  \"snippets\": [\n    {\n      \"trigger\": \"${1:triggerName}\",\n      \"description\": \"${2:Snippet description}\",\n      \"template\": \"${3:Your code here}\"\n    }\n  ]\n}$0"
+
     }
   
 ]

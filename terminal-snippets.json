@@ -21,34 +21,52 @@
       "template": "php -v"
     },
     {
-      "trigger": "gitst",
+      "trigger": "git status",
       "description": "Show Git working tree status",
       "template": "git status"
     },
     
      {
-      "trigger": "gitadd-all",
-      "description": "Show Git working tree status",
+      "trigger": "git add-all",
+      "description": "add all to Stage",
       "template": "git add ."
     },
       
         {
-      "trigger": "gitcommit",
+      "trigger": "git commit",
       "description": "Show Git working tree status",
       "template": "git commit -m \"${1:comment}\""
     },
       
 {
-  "trigger": "git-branch",
+  "trigger": "git branch",
   "description": "Create and switch to a new branch",
+  "template": "git branch"
+},
+      
+      {
+  "trigger": "git br-new",
+  "description": "Create a new branch",
   "template": "git branch ${1:new-branch-name}"
 },
       
       {
-  "trigger": "git-check",
+  "trigger": "git check",
   "description": "switch to a  branch",
   "template": "git checkout ${1:branch-name}"
 },
+      
+  {
+      "trigger": "gitpush",
+      "description": "Push current branch to origin",
+      "template": "git push origin ${1:branch-name}"
+    },
+      
+          {
+      "trigger": "gitpushnew",
+      "description": "Push a brand new local branch to origin",
+      "template": "git push -u origin ${1:new-branch-name}"
+    },
       
     {
       "trigger": "kiteinfo",
